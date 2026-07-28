@@ -1,0 +1,139 @@
+name: Android tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_artifact:
+        description: Name of an uploaded artifact containing the APK
+        type: string
+        default: ''
+      suite:
+        description: Which tagged slice to run
+        type: choice
+        default: smoke
+        options: [smoke, functional, a11y, all]
+      api_level:
+        description: Android API level to emulate
+        type: choice
+        default: '34'
+        options: ['30', '33', '34', '35']
+  schedule:
+    # Weekly regression run, Monday 02:00 UTC.
+    - cron: '0 2 * * 1'
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TEST_ENV: prod-readonly
+  STRICT_SAFETY: 'true'
+
+jobs:
+  android:
+    name: API ${{ matrix.api-level }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # A low and a current API level catches most compatibility breakage
+        # without paying for a full device matrix on every run.
+        api-level: ['30', '34']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - run: npm ci
+
+      - name: Download APK
+        if: inputs.apk_artifact != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.apk_artifact }}
+          path: apps/
+
+      - name: Locate APK
+        id: apk
+        run: |
+          apk=$(find apps -name '*.apk' -print -quit 2>/dev/null || true)
+          if [ -n "$apk" ]; then
+            echo "path=$apk" >> "$GITHUB_OUTPUT"
+            echo "Testing $apk"
+          else
+            echo "path=" >> "$GITHUB_OUTPUT"
+            echo "::warning::No APK supplied. The run will attempt to attach to an installed build and will fail if none is present."
+          fi
+
+      # KVM is what makes the emulator usable rather than glacial.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Cache AVD
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ matrix.api-level }}
+
+      - name: Create AVD and generate a snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "AVD snapshot created"
+
+      - name: Run tests
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_APP_PATH: ${{ steps.apk.outputs.path }}
+          ANDROID_PLATFORM_VERSION: ''
+          ANDROID_NO_RESET: 'false'
+          CI: 'true'
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb devices -l
+            # Verify the selector chains still match this build before running
+            # the suite; a stale chain fails every spec with the same error and
+            # the audit says which one to fix.
+            npm run verify:selectors:android || true
+            if [ "${{ inputs.suite || 'smoke' }}" = "all" ]; then
+              npm run test:android
+            else
+              npx wdio run android/config/wdio.android.conf.ts --mochaOpts.grep "@${{ inputs.suite || 'smoke' }}"
+            fi
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: android-api${{ matrix.api-level }}-artifacts
+          path: artifacts/android
+          retention-days: 14

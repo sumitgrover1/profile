@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "sourceMap": true,
+    "noEmit": true,
+    "types": ["node", "mocha", "@wdio/globals/types", "expect-webdriverio"],
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["shared/*"],
+      "@web/*": ["web/*"],
+      "@android/*": ["android/*"]
+    }
+  },
+  "include": ["web/**/*.ts", "android/**/*.ts", "shared/**/*.ts", "tools/**/*.ts", "*.config.ts"],
+  "exclude": ["node_modules", "artifacts"]
+}

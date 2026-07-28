@@ -1,0 +1,159 @@
+name: Web tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # 06:30 IST on weekdays — before the India morning traffic peak, so a broken
+    # deploy is caught while there is still time to roll it back.
+    - cron: '0 1 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Which tagged slice to run
+        type: choice
+        default: smoke
+        options: [smoke, functional, a11y, visual, perf, seo, all]
+      base_url:
+        description: Override BASE_URL
+        type: string
+        default: ''
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # CI runs against production by default, so it stays read-only. Point a
+  # dispatch run at staging and set TEST_ENV there if you need the
+  # transactional specs.
+  TEST_ENV: prod-readonly
+  STRICT_SAFETY: 'true'
+  BASE_URL: ${{ inputs.base_url || vars.BASE_URL || 'https://www.freecharge.in' }}
+
+jobs:
+  smoke:
+    name: Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run smoke tests
+        run: npm run test:web:smoke
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: smoke-report
+          path: artifacts/web
+          retention-days: 14
+
+  suites:
+    name: ${{ matrix.suite }}
+    # Anything beyond smoke is pointless if the site is not up.
+    needs: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [functional, a11y, seo, responsive]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run ${{ matrix.suite }} tests
+        run: npx playwright test --grep "@${{ matrix.suite }}"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: ${{ matrix.suite }}-report
+          path: artifacts/web
+          retention-days: 14
+
+  visual:
+    name: Visual regression
+    needs: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Snapshots are rasterised by the OS font stack, so they are only comparable
+    # against baselines captured on the same image. Running this on a PR from a
+    # fork would compare against baselines it cannot have produced.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Compare against baselines
+        run: npm run test:web:visual
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: visual-diffs
+          path: artifacts/web
+          retention-days: 14
+
+  performance:
+    name: Performance
+    needs: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Perf numbers off a shared runner are noisy enough that gating a PR on them
+    # produces more false alarms than signal. Track the trend on a schedule.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Measure web vitals
+        run: npm run test:web:perf
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: perf-report
+          path: artifacts/web
+          retention-days: 30
