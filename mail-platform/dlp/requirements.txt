@@ -1,0 +1,13 @@
+# Core: policy files are YAML.
+PyYAML>=6.0
+
+# Attachment text extraction. Optional but you want them — the leak is almost
+# always the attached spreadsheet. Without a library, matching attachments are
+# reported as `unscannable` (visible to the policy) rather than silently passed.
+openpyxl>=3.1      # .xlsx .xlsm .xltx
+python-docx>=1.1   # .docx .dotx
+pdfplumber>=0.11   # .pdf
+
+# Nothing else. The service is stdlib http.server on purpose: it runs on a mail
+# server, listens on loopback, and a dependency tree there buys nothing and
+# breaks on the next distro upgrade.

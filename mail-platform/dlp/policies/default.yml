@@ -1,0 +1,102 @@
+# ============================================================================
+#  Default DLP policy — applies to any tenant without its own file.
+#
+#  Copy to <domain>.yml to give a tenant its own policy. Files are re-read
+#  when their mtime changes; no restart needed.
+# ============================================================================
+
+# monitor  = detect, score, stamp X-DLP-* headers, deliver everything.
+# enforce  = actually quarantine and block.
+#
+# EVERY new tenant starts in monitor. Run it for 2–4 weeks, read the audit log,
+# tune the thresholds against that tenant's real mail, and only then switch to
+# enforce. A DLP rollout that blocks real business mail on day one is a DLP
+# rollout the customer turns off in week two.
+mode: monitor
+
+# Domains that count as "inside" this tenant. Internal-only mail is scored at
+# 0.25x — the risk is data leaving, not data moving around inside.
+internal_domains: []
+
+# Recipients that may legitimately receive sensitive data: the tenant's
+# auditor, their bank, their payment processor. Scored at 1/4.
+# A leading dot matches subdomains: ".hdfcbank.com"
+allowed_external_domains: []
+
+# Senders skipped entirely. Use for service accounts that are *supposed* to
+# send card or KYC data over an approved channel. Keep this list short and
+# review it — every entry is a hole in the policy.
+exempt_senders: []
+
+# --- thresholds -------------------------------------------------------------
+# Score >= tag_at         -> deliver with X-DLP-* headers
+# Score >= quarantine_at  -> hold for admin release
+# Score >= block_at       -> reject at SMTP time with 550
+tag_at: 4.0
+quarantine_at: 12.0
+block_at: 25.0
+
+# --- context multipliers ----------------------------------------------------
+external_multiplier: 2.0    # any recipient outside internal_domains
+allowed_divisor: 4.0        # every external recipient is allow-listed
+
+# --- bulk escalation --------------------------------------------------------
+# Forty card numbers is not forty times one card number — it's a data export.
+# Beyond bulk_threshold hits of the same detector, the score grows faster than
+# linearly. This is the rule that catches the leak that actually matters.
+bulk_threshold: 5
+bulk_exponent: 1.35
+
+# Don't scan more than this much extracted text per part.
+max_scan_bytes: 2000000
+
+# --- per-detector tuning ----------------------------------------------------
+# weight              override the built-in severity
+# enabled             false to switch a detector off for this tenant
+# no_context_factor   score multiplier when no supporting keyword was found
+#                     nearby (a card number with no card-related words around
+#                     it is more likely to be an order number)
+# max_contribution    ceiling, so one noisy detector can't dominate
+rules:
+  payment_card:
+    weight: 9.0
+    no_context_factor: 0.3
+    max_contribution: 60.0
+
+  card_cvv:
+    weight: 3.0
+  card_expiry:
+    weight: 2.0
+
+  # Aadhaar requires a nearby keyword (aadhaar/uid/kyc/आधार) to register at
+  # all. That is not tunable here and it is deliberate: the Verhoeff check
+  # digit alone leaves roughly 8% of random 12-digit numbers looking valid,
+  # so without the keyword requirement every invoice number becomes an alert.
+  aadhaar:
+    weight: 9.0
+    max_contribution: 60.0
+
+  pan_india:
+    weight: 7.0
+  gstin:
+    weight: 5.0
+  ifsc:
+    weight: 3.0
+  bank_account:
+    weight: 6.0
+  iban:
+    weight: 5.0
+  upi_id:
+    weight: 2.0
+
+  # Credentials are unambiguous and severe — one private key in one mail is
+  # worth blocking on its own.
+  private_key:
+    weight: 12.0
+  aws_access_key:
+    weight: 10.0
+  generic_secret:
+    weight: 6.0
+
+  confidential_marking:
+    weight: 4.0

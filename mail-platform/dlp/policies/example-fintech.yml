@@ -1,0 +1,78 @@
+# ============================================================================
+#  Example tenant policy: an RBI-regulated fintech.
+#
+#  Rename to <their-domain>.yml. This is the shape of policy you sell — the
+#  customer is not buying regex, they are buying "we can show an auditor that
+#  card and KYC data cannot leave by email".
+# ============================================================================
+
+mode: monitor        # switch to enforce only after a clean monitoring period
+
+internal_domains:
+  - fintechco.in
+  - .fintechco.in            # leading dot = subdomains too
+  - fintechco-internal.com
+
+# Counterparties that are allowed to receive sensitive data.
+# Every entry here needs a named business owner; review quarterly.
+allowed_external_domains:
+  - .hdfcbank.com            # sponsor bank
+  - .npci.org.in
+  - auditors-llp.in          # statutory auditor
+  - .rbi.org.in
+
+# Service accounts whose whole job is sending KYC/settlement files over an
+# approved channel. Keep this list as short as you can defend to an auditor.
+exempt_senders:
+  - settlement-bot@fintechco.in
+
+# Tighter than default: this tenant handles card and Aadhaar data, so the bar
+# for holding a message is lower.
+tag_at: 3.0
+quarantine_at: 8.0
+block_at: 16.0
+
+external_multiplier: 2.5
+allowed_divisor: 5.0
+
+# A customer export is the breach scenario. Escalate early and hard.
+bulk_threshold: 3
+bulk_exponent: 1.5
+
+rules:
+  # PCI DSS: cardholder data must never leave by email. Single hit should be
+  # enough to hold the message once this tenant is in enforce mode.
+  payment_card:
+    weight: 14.0
+    no_context_factor: 0.5
+    max_contribution: 80.0
+  card_cvv:
+    weight: 8.0
+  card_expiry:
+    weight: 4.0
+
+  # KYC data.
+  aadhaar:
+    weight: 12.0
+    max_contribution: 80.0
+  pan_india:
+    weight: 8.0
+
+  bank_account:
+    weight: 8.0
+  ifsc:
+    weight: 3.0
+  gstin:
+    weight: 3.0            # a GSTIN on an invoice is normal business
+  upi_id:
+    weight: 1.0            # UPI handles are semi-public; keep the noise down
+
+  private_key:
+    weight: 20.0           # blocks on its own at block_at 16
+  aws_access_key:
+    weight: 16.0
+  generic_secret:
+    weight: 10.0
+
+  confidential_marking:
+    weight: 5.0
