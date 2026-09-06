@@ -1,0 +1,123 @@
+# ============================================================================
+#  mailstack configuration
+#  Copy to mailstack.conf and edit BEFORE running ./bootstrap.sh
+#  This file is sourced by bash — no spaces around "=", quote your values.
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# REQUIRED
+# ---------------------------------------------------------------------------
+
+# Fully-qualified hostname of THIS server. Must already have:
+#   - an A record pointing to this server's public IP
+#   - a PTR (reverse DNS) record set to this exact name by your VPS provider
+# This is the name that appears in SMTP banners and TLS certificates.
+MAIL_HOSTNAME="mail.example.com"
+
+# The first email domain to host (you can add more later in the Modoboa UI).
+PRIMARY_DOMAIN="example.com"
+
+# Used for Let's Encrypt expiry notices and healthcheck alerts.
+# Must be an address you can read from OUTSIDE this server.
+ADMIN_EMAIL="admin@somewhere-else.com"
+
+# ---------------------------------------------------------------------------
+# LOCALE
+# ---------------------------------------------------------------------------
+
+TIMEZONE="Asia/Kolkata"
+DEFAULT_LANGUAGE="English"
+
+# ---------------------------------------------------------------------------
+# COMPONENTS
+# ---------------------------------------------------------------------------
+
+# SOGo: webmail + calendar + contacts + Microsoft ActiveSync (Outlook/iPhone
+# native sync). This is the single biggest sellable feature in the stack.
+INSTALL_SOGO="yes"
+
+# Roundcube: a second, lighter, mail-only webmail at /webmail.
+# SOGo already does mail, so this is optional. Two webmails = two UIs to brand
+# and two support surfaces. Recommended "no" for v1, "yes" if you want it.
+INSTALL_ROUNDCUBE="yes"
+
+# postfwd: per-mailbox outbound rate limiting. Do NOT disable this on a
+# server that sells mailboxes — one compromised account can blacklist your IP.
+INSTALL_POSTFWD="yes"
+
+# ufw firewall + fail2ban.
+INSTALL_FIREWALL="yes"
+
+# Healthcheck + DNSBL monitoring cron jobs.
+INSTALL_OPS_TOOLS="yes"
+
+# ---------------------------------------------------------------------------
+# OUTBOUND RATE LIMITS (per authenticated mailbox)
+# ---------------------------------------------------------------------------
+# Start strict. A real business user sends well under 100 mails/hour.
+# Raise per-customer later; a low default is your main anti-abuse control.
+
+OUTBOUND_MSGS_PER_HOUR="100"
+OUTBOUND_MSGS_PER_DAY="500"
+OUTBOUND_RCPT_PER_DAY="1000"
+
+# ---------------------------------------------------------------------------
+# TLS
+# ---------------------------------------------------------------------------
+# "letsencrypt" issues a real certificate (needs ports 80/443 reachable from
+# the internet and DNS already pointing here). "self-signed" is for testing.
+CERTIFICATE_TYPE="letsencrypt"
+
+# ---------------------------------------------------------------------------
+# PASSWORDS  (leave EMPTY to auto-generate — recommended)
+# ---------------------------------------------------------------------------
+# Generated values are written to /root/.mailstack-credentials (mode 0600).
+
+DB_PASSWORD=""            # PostgreSQL password for the modoboa DB user
+SOGO_DB_PASSWORD=""       # PostgreSQL password for the sogo DB user
+ROUNDCUBE_DB_PASSWORD=""  # PostgreSQL password for the roundcube DB user
+
+# ---------------------------------------------------------------------------
+# PASSWORD HASHING  —  READ THIS
+# ---------------------------------------------------------------------------
+# SOGo authenticates against Modoboa's user table directly, and it only
+# understands classic crypt schemes. If Modoboa is left on a modern scheme
+# (argon2 / pbkdf2), SOGo logins will fail for every user.
+#
+# The script forces this scheme BEFORE any mailbox is created. Changing it
+# after users exist means resetting every password, so do not touch it later.
+MODOBOA_PASSWORD_SCHEME="sha512crypt"
+
+# ---------------------------------------------------------------------------
+# SOGo APT REPOSITORY
+# ---------------------------------------------------------------------------
+# Verify these against the current downloads page before a fresh install:
+#   https://www.sogo.nu/support.html#/downloads
+# If the repo fails, the script falls back to your distro's "sogo" package
+# (older, but functional) and tells you.
+SOGO_REPO_URL="https://packages.sogo.nu/nightly/5/ubuntu/"
+SOGO_REPO_KEY_URL="https://keys.openpgp.org/vks/v1/by-fingerprint/74FFC6D72B925A34B5D356BDF8A27B36A6E2EAE9"
+# Leave empty to auto-detect from the running distro (e.g. "noble", "jammy").
+SOGO_REPO_SUITE=""
+
+# ---------------------------------------------------------------------------
+# BACKUPS (optional)
+# ---------------------------------------------------------------------------
+# Set BACKUP_REPO to enable a nightly restic backup of mail + databases.
+# Examples:
+#   s3:s3.amazonaws.com/my-mail-backups
+#   s3:https://s3.ap-south-1.wasabisys.com/my-mail-backups
+#   sftp:backup@backup.example.com:/srv/mail-backups
+# Leave empty and the script only installs restic + the script, no cron.
+BACKUP_REPO=""
+BACKUP_PASSWORD=""             # restic repository password (keep this safe!)
+AWS_ACCESS_KEY_ID=""           # for s3: targets
+AWS_SECRET_ACCESS_KEY=""
+BACKUP_KEEP_DAILY="7"
+BACKUP_KEEP_WEEKLY="4"
+BACKUP_KEEP_MONTHLY="6"
+
+# ---------------------------------------------------------------------------
+# SSH PORT (only used to build the firewall rule)
+# ---------------------------------------------------------------------------
+SSH_PORT="22"

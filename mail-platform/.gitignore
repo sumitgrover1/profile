@@ -1,0 +1,2 @@
+# real config holds passwords — never commit it
+mailstack.conf
